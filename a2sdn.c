@@ -130,7 +130,7 @@ CON Con;
 SW Sw;
 // since marco do not work well in C, insteadlly using global variable
 const int FORWARD = 1;
-const int DROP = 1;
+const int DROP = 0;
 
 int main(int argc, char* argv[]) {
 
@@ -351,7 +351,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         }
 
         SwitchCounter swCounter;
-        swCounter.admitCounter = addRuleCounter;
+        swCounter.admitCounter = admitCounter;
         swCounter.ackCounter = ackCounter;
         swCounter.addRuleCounter = addRuleCounter;
         swCounter.relayInCounter = relayInCounter;
@@ -384,14 +384,13 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 srcIP = atoi(temp);
                 temp = strtok(NULL, " ");
                 dstIP = atoi(temp);
-                
-                printf("%d %d %d\n", aimSwith, srcIP, dstIP);
             }
         }
 
-
+        printf("%d %d %d\n", aimSwith, srcIP, dstIP);
 
         if (aimSwith == sw.swID) {
+            printf("relay: %d", n);
             int n = switchAction(flows, srcIP, dstIP, numFlowTable);
             admitCounter++;
             if (n > 0) {
@@ -414,6 +413,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 msg.mQuery.port1 = sw.port1;
                 msg.mQuery.port2 = sw.port2;
                 sendFrame(fdConWrite, QUERY, &msg);
+                printf("\nTransmitted (src= sw%d, dest= cont)[QUERY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, srcIP, dstIP);
             } 
         }
         aimSwith = 0; // reset 
