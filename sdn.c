@@ -62,11 +62,11 @@ typedef struct {
     int Iphi;
 } SwitchInfo;
 
-struct pollfd {
-    int fd;        /* file descriptor */
-    short events;     /* requested events */
-    short revents;    /* returned events */
-};
+//typedef struct {
+//    int fd;        /* file descriptor */
+//    short events;     /* requested events */
+//    short revents;    /* returned events */
+//}pollfd;
 
 typedef struct {
     int srcIPlo;
@@ -90,36 +90,36 @@ typedef struct {
 } SwitchCounter;
 
 typedef struct {
-    struct SwitchInfo[] switch_list;
+    struct SwitchInfo *switch_list;
     int numSwitch;
     int openCounter;
     int queryCounter;
     int ackCounter;
     int addCounter;
-} Con;
+} CON;
 
 typedef struct {
-    struct FlowTable[] flows;
+    FlowTable *flows;
     int numFlowTable;
-    struct SwitchCounter swCounter;
+    SwitchCounter swCounter;
 } SW;
 
 void user1Controller(int signum);
 void user1Controller(int signum);
-int executeswitch(SwitchInfo sw, char[] filename);
-int switchAction(struct FlowTable[] flows,int srcIP,int dstIP,int numFlowTable);
-int printSwitch(struct FlowTable[] flows,int numFlowTable,struct SwitchCounter swCounter);
-MSG controllerRule(MSG_QUERY query, SwitchInfo[] switch_list, int numSwitch);
+int executeswitch(SwitchInfo sw, char filename[]);
+int switchAction(FlowTable flows[],int srcIP,int dstIP,int numFlowTable);
+int printSwitch(FlowTable flows[],int numFlowTable,SwitchCounter swCounter);
+MSG controllerRule(MSG_QUERY query, SwitchInfo switch_list[], int numSwitch);
 void controller(int numSwitch);
-int printController(SwitchInfo[] switch_list,int numSwitch,int openCounter,int queryCounter,int ackCounter,int addCounter);
+int printController(SwitchInfo switch_list[],int numSwitch,int openCounter,int queryCounter,int ackCounter,int addCounter);
 void FATAL (const char *fmt, ... );
 int openFIFO(int sender, int revsiver);
 FRAME rcvFrame (int fd);
 void WARNING (const char *fmt, ... );
 void sendFrame (int fd, KIND kind, MSG *msg);
 
-struct Con Con;
-struct SW Sw;
+CON* Con;
+SW* Sw;
 
 int main(int argc, char* argv[]) {
 
@@ -129,7 +129,7 @@ int main(int argc, char* argv[]) {
     if (strcmp(argv[1], "cont") == 0 && argc == 3) {
         /*controler mode*/
 
-        if (argv[2] > MAX_NSW) {
+	if (atoi(argv[2]) > MAX_NSW) {
             printf("Too much Switchs"); // check number of switches
             return -2;
         }
@@ -139,10 +139,10 @@ int main(int argc, char* argv[]) {
         
         controller(argv[2]);
 
-    } else if (argc == 6 && name[0] == "s" && name[1] == "w") {
+    } else if (argc == 6 && strcmp(name[0],"s")==0 && strcmp(name[1],"w")==0) {
         /*switch mode*/
-        struct SwitchInfo sw;
-        sw.swID = int(name[3]);
+        SwitchInfo sw;
+        sw.swID = atoi(name[3]);
         
         char filename[50];
         strcpy(filename, argv[2]);
@@ -150,7 +150,7 @@ int main(int argc, char* argv[]) {
         if (strcmp(argv[3],"null")) {
             sw.port1 = -1;
         } else {
-            sw.port1 = int(argv[3][3]);
+            sw.port1 = atoi(argv[3][3]);
         }
 
         if (strcmp(argv[4],"null")) {
@@ -509,7 +509,7 @@ int controller(int numSwitch) {
         keyboard.events = POLLIN;
 
         poll(keyboard, 1, 0);
-        userCmd[50];
+        char userCmd[50];
         if ((keyboard.revents & POLLIN)) {
             scanf("%s", userCmd);
         }
@@ -517,7 +517,7 @@ int controller(int numSwitch) {
         // run user cmd
         if (strcmp(userCmd,"list")==0) {
             printController(switch_list, numSwitch, openCounter, queryCounter, ackCounter, addCounter);
-        } else if (strcmp(userCmd,"exit")==0)) {
+        } else if (strcmp(userCmd,"exit")==0) {
             printController(switch_list, numSwitch, openCounter, queryCounter, ackCounter, addCounter);
             return 0;
         }
@@ -546,14 +546,14 @@ int controller(int numSwitch) {
                     switch_list[i].Iphi = frame.msg.mOpen.Iphi;
                     switch_list[i].IPlo = frame.msg.mOpen.IPlo;
 
-                    MSG msg = NULL;
+                    MSG msg;
                     sendFrame(fdWrite[i], ACK, &msg);
                     ackCounter += 1;
                 }
                 else if (frame.kind == QUERY) {
                     queryCounter += 1;
 
-                    MSG msg = controllerRule(frame.msg.mQuery, switch_list);
+                    MSG msg = controllerRule(frame.msg.mQuery, switch_list, numSwitch);
                     sendFrame(fdWrite[i], ADD, &msg);
                     addCounter += 1;
                 }
@@ -562,7 +562,7 @@ int controller(int numSwitch) {
     }
 }
 
-MSG controllerRule(MSG_QUERY query, SwitchInfo[] switch_list, int numSwitch) {
+MSG controllerRule(MSG_QUERY query, SwitchInfo switch_list[], int numSwitch) {
     MSG msg;
     msg.mAdd.swID = query.swID;
     msg.mAdd.srcIP = query.srcIP;
@@ -590,7 +590,7 @@ MSG controllerRule(MSG_QUERY query, SwitchInfo[] switch_list, int numSwitch) {
     return msg;
 }
 
-int printController(SwitchInfo[] switch_list,int numSwitch,int openCounter,int queryCounter,int ackCounter,int addCounter) {
+int printController(SwitchInfo switch_list[],int numSwitch,int openCounter,int queryCounter,int ackCounter,int addCounter) {
     printf("Switch information:\n");
     for (int i=0; i< numSwitch; i++) {
         if (switch_list[i].swID != 0) {
