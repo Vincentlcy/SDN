@@ -314,7 +314,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
 
         if (aimSwith == sw.swID) {
             int n = switchAction(flows, srcIP, dstIP, numFlowTable);
-            printf("%d %d %d\n"n, srcIP, dstIP);
+            printf("%d %d %d\n",n, srcIP, dstIP);
             admitCounter++;
             if (n > 0) {
                 relayOutCounter++;
