@@ -250,7 +250,6 @@ int executeswitch(SwitchInfo sw, char filename[]) {
     openCounter += 1;
     printf("\nTransmitted (src= sw%d, dest= cont) [OPEN]:\n", sw.swID);
     printf("    port0= cont, port1= %d, port2= %d, port3= %d-%d\n", sw.port1, sw.port2, sw.IPlo, sw.Iphi);
-    printf("D: %d", POLLIN);
 
     while (1) {
         int aimSwith = 0;
@@ -315,6 +314,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
 
         if (aimSwith == sw.swID) {
             int n = switchAction(flows, srcIP, dstIP, numFlowTable);
+            printf("%d %d %d\n"n, srcIP, dstIP);
             admitCounter++;
             if (n > 0) {
                 relayOutCounter++;
@@ -383,8 +383,10 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                     msg.mRelay.dstIP = frame.msg.mAdd.dstIP;
                     if (n==1) {
                         sendFrame(fdPort1Write, RELAY, &msg);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mQuery.srcIP, msg.mQuery.dstIP);
                     } else if (n==2) {
                         sendFrame(fdPort2Write, RELAY, &msg);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mQuery.srcIP, msg.mQuery.dstIP);
                     }
                 } else if (n == -1) {
                     // need to query
@@ -418,8 +420,10 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                     msg.mRelay.dstIP = frame.msg.mQuery.dstIP;
                     if (n==1) {
                         sendFrame(fdPort1Write, RELAY, &msg);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mQuery.srcIP, msg.mQuery.dstIP);
                     } else if (n==2) {
                         sendFrame(fdPort2Write, RELAY, &msg);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mQuery.srcIP, msg.mQuery.dstIP);
                     }
                 } else if (n == -1) {
                     // need to query
@@ -452,8 +456,10 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                     msg.mRelay.dstIP = frame.msg.mQuery.dstIP;
                     if (n==1) {
                         sendFrame(fdPort1Write, RELAY, &msg);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mQuery.srcIP, msg.mQuery.dstIP);
                     } else if (n==2) {
                         sendFrame(fdPort2Write, RELAY, &msg);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mQuery.srcIP, msg.mQuery.dstIP);
                     }
                 } else if (n == -1) {
                     // need to query
@@ -545,10 +551,11 @@ int controller(int numSwitch) {
         keyboard[0].events = POLLIN;
 
         poll(keyboard, 1, 0);
-        char userCmd[50];
+        char userCmd[5];
         if ((keyboard[0].revents & POLLIN)) {
             // scanf("%s", userCmd);
             read(STDIN_FILENO, userCmd, sizeof(userCmd));
+            userCmd[5] = '\0';
 	        keyboard[0].revents = -1;
         }
 
@@ -586,7 +593,7 @@ int controller(int numSwitch) {
                     switch_list[i].IPlo = frame.msg.mOpen.IPlo;
 
                     printf("\nReceived (src= sw%d, dest= cont) [OPEN]:\n", i+1);
-                    printf("	 (port0= cont, port1= %d , port2= sw%d, port3= %d-%d)\n", switch_list[i].port1, switch_list[i].port2, switch_list[i].IPlo, switch_list[i].Iphi);
+                    printf("	 (port0= cont, port1= %d , port2= %d, port3= %d-%d)\n", switch_list[i].port1, switch_list[i].port2, switch_list[i].IPlo, switch_list[i].Iphi);
 
                     MSG msg;
                     sendFrame(fdWrite[i], ACK, &msg);
