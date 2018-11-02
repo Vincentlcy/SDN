@@ -1,7 +1,7 @@
 
 # include <stdio.h>
 # include <stdlib.h>
-// # include <poll.h>
+# include <poll.h>
 # include <unistd.h>
 # include <stdarg.h>
 # include <assert.h>
@@ -346,7 +346,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         if (fifo[0].revents & POLLIN) {
             FRAME frame;
             frame = rcvFrame(fifo[0].fd);
-	        fifo[0].revents = 0;
+	        fifo[0].revents = False;
 
             if (frame.kind == ACK) {
                 ackCounter += 1;
@@ -367,7 +367,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 flows[numFlowTable-1].pktCount = 0;
 
                 printf("\nReceived (src= cont, dest= sw%d) [ADD]:\n", sw.swID);
-                printf("    (srcIP= 0-%d, destIP= %d-%d, ", numFlowTable-1, flows[numFlowTable-1].srcIPhi, flows[numFlowTable-1].dstIPlo, flows[numFlowTable-1].dstIPhi);
+                printf("    (srcIP= 0-%d, destIP= %d-%d, ", flows[numFlowTable-1].srcIPhi, flows[numFlowTable-1].dstIPlo, flows[numFlowTable-1].dstIPhi);
                 if (flows[numFlowTable].actionType == FORWARD) {
                     printf("action= FORWARD:%d, pri= %d, pktCount= %d\n", flows[numFlowTable-1].actionVal, flows[numFlowTable-1].pri, flows[numFlowTable-1].pktCount);
                 } else {
@@ -403,12 +403,12 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         // read from port1
         if (sw.port1 != -1) {
             if (fifo[1].revents & POLLIN) {
-                fifo[1].revents = 0;
+                fifo[1].revents = -1;
                 FRAME frame;
                 frame = rcvFrame(fifo[1].fd);
                 relayInCounter++;
 
-                printf("\nReceived (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= 200, destIP= 100)\n", sw.port1, sw.swID, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP);
+                printf("\nReceived (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.port1, sw.swID, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP);
 
                 int n = switchAction(flows, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP, numFlowTable);
                 if (n > 0) {
@@ -437,12 +437,12 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         }
         if (sw.port2 != -1) {
             if (fifo[2].revents &POLLIN) {
-                fifo[2].revents = 0;
+                fifo[2].revents = -1;
                 FRAME frame;
                 frame = rcvFrame(fifo[2].fd);
                 relayInCounter++;
 
-                printf("\nReceived (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= 200, destIP= 100)\n", sw.port2, sw.swID, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP);
+                printf("\nReceived (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.port2, sw.swID, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP);
 
                 int n = switchAction(flows, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP, numFlowTable);
                 if (n > 0) {
@@ -548,7 +548,7 @@ int controller(int numSwitch) {
         char userCmd[50];
         if ((keyboard[0].revents & POLLIN)) {
             scanf("%s", userCmd);
-	        keyboard[0].revents = 0;
+	        keyboard[0].revents = -1;
         }
 
         // run user cmd
@@ -570,9 +570,10 @@ int controller(int numSwitch) {
         poll(pollfifo, numSwitch, 0);
 
         for (int i=0;i<numSwitch;i++) {
+	    printf("%d %d\n", pollfifo[0].revents, keyboard[0].revents);
             if ((pollfifo[i].revents & POLLIN)) {
                 FRAME frame;
-		        pollfifo[i].revents = 0;
+		        pollfifo[i].revents = -1;
                 frame = rcvFrame(pollfifo[i].fd);
 
                 if (frame.kind == OPEN) {
