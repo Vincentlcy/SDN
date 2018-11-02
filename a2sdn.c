@@ -662,7 +662,7 @@ int openFIFO(int sender, int reciver) {
     fifoName[5] = sender + '0';
     fifoName[7] = reciver + '0';
 
-    printf(fifoName);
+    printf("%d\n",fifoName);
 
     return open(fifoName, O_RDWR);
 }
