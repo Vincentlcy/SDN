@@ -131,35 +131,36 @@ int main(int argc, char* argv[]) {
 
     if (strcmp(argv[1], "cont") == 0 && argc == 3) {
         /*controler mode*/
-
-	if (atoi(argv[2]) > 7 ) {
+	char temp[20];
+        strcpy(temp, argv[2]);
+	if (atoi(&temp[0]) >= 7 ||atoi(&temp[0])<1) {
             printf("Too much Switchs"); // check number of switches
             return -2;
         }
 
         /* Bound singal USER1 with handler */
         signal(SIGUSR1, user1Controller);
-        
-        controller(atoi(argv[2]));
+ 		
+        controller(atoi(&temp[0]));
 
     } else if (argc == 6 && strncmp(&name[0],"s",1)==0 && strncmp(&name[1],"w",1)==0) {
         /*switch mode*/
         SwitchInfo sw;
-        sw.swID = atoi(&name[3]);
-        
+        sw.swID = atoi(&name[2]);
+         
         char filename[50];
         strcpy(filename, argv[2]);
 
-        if (strcmp(argv[3],"null")) {
+        if (strcmp(argv[3],"null")==0) {
             sw.port1 = -1;
         } else {
             sw.port1 = atoi(&argv[3][3]);
         }
 
-        if (strcmp(argv[4],"null")) {
+        if (strcmp(argv[4],"null")==0) {
             sw.port2 = -1;
         } else {
-            sw.port2 =  (int)argv[4][3];
+            sw.port2 = atoi(&argv[4][3]);
         }
 
         char *temp;
@@ -202,6 +203,9 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         printf("Fail to read file");
         return -1;
     }
+
+    printf("Switch%d start: port1=%d, port2=%d", sw.swID, sw.port1, sw.port2);
+    printf(", IP:%d-%d\n", sw.IPlo, sw.Iphi);
 
     FlowTable flows[50];
 
@@ -263,6 +267,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         char userCmd[50];
         if ((keyboard[0].revents & POLLIN)) {
             scanf("%s", userCmd);
+	    keyboard[0].revents = 0;
         }
 
         SwitchCounter swCounter;
@@ -280,7 +285,6 @@ int executeswitch(SwitchInfo sw, char filename[]) {
 
         // run user cmd
         if (strcmp(userCmd,"list")==0) {
-            
             printSwitch(flows, numFlowTable, swCounter);
 
         } else if (strcmp(userCmd,"exit")==0) {
@@ -341,14 +345,24 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         if (fifo[0].revents & POLLIN) {
             FRAME frame;
             frame = rcvFrame(fifo[0].fd);
+	    fifo[0].revents = 0;
 
             if (frame.kind == ACK) {
                 ackCounter += 1;
+		printf("Received Message: ACK\n");
             }
 
             if (frame.kind == ADD) {
                 numFlowTable++;
                 addRuleCounter++;
+
+		printf("Received Message: ADD\n");
+		printf("[%d] (srcIP= 0-%d, destIP= %d-%d, )", numflowtable-1, flows[i] strcpy(temp, argv[2]);.srcIPhi, flows[i].dstIPlo, flows[i].dstIPhi);
+		if (flows[i].actionType == FORWARD) {
+		    printf("action= FORWARD:%d, pri= %d, pktCount= %d\n", flows[i].actionVal, flows[i].pri, flows[i].pktCount);
+		} else {
+		    printf("action= DROP:%d, pri= %d\n", flows[i].actionVal, flows[i].pri);
+		}
 
                 flows[numFlowTable-1].srcIPlo = 0;
                 flows[numFlowTable-1].srcIPhi = MAX_IP;
@@ -466,9 +480,9 @@ int switchAction(FlowTable flows[],int srcIP,int dstIP,int numFlowTable) {
 }
 
 int printSwitch(FlowTable flows[],int numFlowTable, SwitchCounter swCounter) {
-    printf("Flow table:");
+    printf("Flow table:\n");
     for (int i=0; i<numFlowTable; i++) {
-        printf("[%d] (srcIP= %d-%d, destIP= %d-%d, )", i, flows[i].srcIPlo, flows[i].srcIPhi, flows[i].dstIPlo, flows[i].dstIPhi);
+        printf("sw[%d] (srcIP= %d-%d, destIP= %d-%d, )", i, flows[i].srcIPlo, flows[i].srcIPhi, flows[i].dstIPlo, flows[i].dstIPhi);
         if (flows[i].actionType == FORWARD) {
             printf("action= FORWARD:%d, pri= %d, pktCount= %d\n", flows[i].actionVal, flows[i].pri, flows[i].pktCount);
         } else {
@@ -476,7 +490,7 @@ int printSwitch(FlowTable flows[],int numFlowTable, SwitchCounter swCounter) {
         }
     }
     printf("Packet Stats:\n    Received:    ADMIT:%d, ACK:%d, ADDRULE:%d, RELAYIN:%d\n", swCounter.admitCounter, swCounter.ackCounter, swCounter.addRuleCounter, swCounter.relayInCounter);
-    printf("    Transmitted: OPEN:%d, QUERY:%d, RELAYOUT:%d", swCounter.openCounter, swCounter.queryCounter, swCounter.relayOutCounter);
+    printf("    Transmitted: OPEN:%d, QUERY:%d, RELAYOUT:%d\n", swCounter.openCounter, swCounter.queryCounter, swCounter.relayOutCounter);
     return 0;
 }
 
@@ -488,6 +502,7 @@ int controller(int numSwitch) {
     int fdRead[9];
     int fdWrite[9];
     SwitchInfo switch_list[numSwitch];
+    printf("Controller start: have %d switch\n", numSwitch);
 
 
     for (int i = 1; i<numSwitch; i++) {
@@ -519,6 +534,7 @@ int controller(int numSwitch) {
         char userCmd[50];
         if ((keyboard[0].revents & POLLIN)) {
             scanf("%s", userCmd);
+	    keyboard[0].revents = 0;
         }
 
         // run user cmd
@@ -540,8 +556,9 @@ int controller(int numSwitch) {
         poll(pollfifo, numSwitch, 0);
 
         for (int i=0;i<numSwitch;i++) {
-            if ((keyboard[0].revents & POLLIN)) {
+            if ((pollfifo[i].revents & POLLIN)) {
                 FRAME frame;
+		pollfifo[i].revents = 0;
                 frame = rcvFrame(pollfifo[i].fd);
 
                 if (frame.kind == OPEN) {

@@ -1,7 +1,7 @@
-all: a2sdn FIFO
+all: clean a2sdn FIFO
 
 clean:
-	rm -rf a2sdn submit.tar
+	rm -rf a2sdn submit.tar fifo-0-1 fifo-1-0
 
 tar:
 	tar -czf submit.tar a2sdn.cpp makefile report.pdf 
