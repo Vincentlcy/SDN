@@ -531,7 +531,7 @@ int controller(int numSwitch) {
     while (1) {
 
         // update global variable
-	memcpy(&Con.switch_list, &switch_list, sizeof(switch_list));
+	    memcpy(&Con.switch_list, &switch_list, sizeof(switch_list));
         Con.numSwitch = numSwitch;
         Con.openCounter = openCounter;
         Con.queryCounter = queryCounter;
@@ -570,7 +570,6 @@ int controller(int numSwitch) {
         poll(pollfifo, numSwitch, 0);
 
         for (int i=0;i<numSwitch;i++) {
-	    printf("%d %d\n", pollfifo[0].revents, keyboard[0].revents);
             if ((pollfifo[i].revents & POLLIN)) {
                 FRAME frame;
 		        pollfifo[i].revents = -1;
