@@ -519,13 +519,13 @@ int controller(int numSwitch) {
     printf("Controller start: have %d switch\n", numSwitch);
 
 
-    for (int i = 1; i<numSwitch; i++) {
+    for (int i = 0; i<numSwitch; i++) {
         // set switch id = 0 means this switch have not been created
-        switch_list[i-1].swID = 0;
-        int fdread = openFIFO(i,0);
-        int fdwrite = openFIFO(0,i);
-        fdRead[i-1] = fdread;
-        fdWrite[i-1] = fdwrite;
+        switch_list[i].swID = 0;
+        int fdread = openFIFO(i+1,0);
+        int fdwrite = openFIFO(0,i+1);
+        fdRead[i] = fdread;
+        fdWrite[i] = fdwrite;
     }
 
     while (1) {
@@ -662,7 +662,7 @@ int openFIFO(int sender, int reciver) {
     fifoName[5] = sender + '0';
     fifoName[7] = reciver + '0';
 
-    printf("%d\n",fifoName);
+    printf("%s\n",fifoName);
 
     return open(fifoName, O_RDWR);
 }
