@@ -387,8 +387,6 @@ int executeswitch(SwitchInfo sw, char filename[]) {
             }
         }
 
-        printf("%d %d, %d %d\n", aimSwith, sw.swID, srcIP, dstIP);
-
         if (aimSwith == sw.swID) {
             int n = switchAction(flows, srcIP, dstIP, numFlowTable);
             admitCounter++;
