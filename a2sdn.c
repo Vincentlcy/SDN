@@ -263,6 +263,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
     printf("    port0= cont, port1= %d, port2= %d, port3= %d-%d\n", sw.port1, sw.port2, sw.IPlo, sw.Iphi);
 
     while (1) {
+        time.sleep(100)
         int aimSwith = 0;
         int srcIP = 0;
         int dstIP = 0;
@@ -775,6 +776,7 @@ int openFIFO(int sender, int reciver) {
     strcpy(fifoName, "fifo-x-y");
     fifoName[5] = sender + '0';
     fifoName[7] = reciver + '0';
+    print("%s\n", fifoName);
 
     return open(fifoName, O_RDWR);
 }
