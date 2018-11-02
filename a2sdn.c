@@ -265,8 +265,9 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         poll(keyboard, 1, 0);
         char userCmd[50];
         if ((keyboard[0].revents & POLLIN)) {
-            scanf("%s", userCmd);
-	    keyboard[0].revents = -1;
+            read(STDIN_FILENO, userCmd, 4*sizeof(char));
+	        keyboard[0].revents = -1;
+            printf("%s\n", userCmd)
         }
 
         SwitchCounter swCounter;
@@ -296,16 +297,15 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         if (fgets(line, 100, filefp)!=NULL) {
             if (strcmp(&line[0], "#")==0 || line[0] == '\0'|| line[0] == '\n') {}
             else {
-		printf("%s", line);
                 char *temp;
                 temp = strtok(line, " ");
                 aimSwith = atoi(&temp[2]);
                 temp = strtok(NULL, " ");
-		srcIP = atoi(temp);
+                srcIP = atoi(temp);
                 temp = strtok(NULL, " ");
-		dstIP = atoi(temp);
-		printf("%d %d %d, %s", aimSwith, srcIP, dstIP, line);
-		
+                dstIP = atoi(temp);
+                
+                printf("%d %d %d\n",n, srcIP, dstIP);
             }
         }
 
@@ -319,7 +319,6 @@ int executeswitch(SwitchInfo sw, char filename[]) {
 
         if (aimSwith == sw.swID) {
             int n = switchAction(flows, srcIP, dstIP, numFlowTable);
-            printf("%d %d %d\n",n, srcIP, dstIP);
             admitCounter++;
             if (n > 0) {
                 relayOutCounter++;
@@ -559,8 +558,8 @@ int controller(int numSwitch) {
         char userCmd[5];
         if ((keyboard[0].revents & POLLIN)) {
             // scanf("%s", userCmd);
-            read(STDIN_FILENO, userCmd, sizeof(userCmd));
-            userCmd[5] = '\0';
+            read(STDIN_FILENO, userCmd, 4*sizeof(char));
+            userCmd[4] = '\0';
 	        keyboard[0].revents = -1;
             printf("%s\n", userCmd);
         }
@@ -678,8 +677,6 @@ int openFIFO(int sender, int reciver) {
     strcpy(fifoName, "fifo-x-y");
     fifoName[5] = sender + '0';
     fifoName[7] = reciver + '0';
-
-    printf("%s\n",fifoName);
 
     return open(fifoName, O_RDWR);
 }
