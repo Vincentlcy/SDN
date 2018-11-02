@@ -548,7 +548,7 @@ int controller(int numSwitch) {
         char userCmd[50];
         if ((keyboard[0].revents & POLLIN)) {
             // scanf("%s", userCmd);
-            read(STDIN_FILENO, userCmd, sizeof(usercmd));
+            read(STDIN_FILENO, userCmd, sizeof(userCmd));
 	        keyboard[0].revents = -1;
         }
 
