@@ -266,7 +266,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         char userCmd[50];
         if ((keyboard[0].revents & POLLIN)) {
             scanf("%s", userCmd);
-	    keyboard[0].revents = 0;
+	    keyboard[0].revents = -1;
         }
 
         SwitchCounter swCounter;
@@ -294,13 +294,18 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         // read from file
         char line[100];
         if (fgets(line, 100, filefp)!=NULL) {
-            if (strcmp(&line[0], "#")==0 || line[0] == '\0') {}
+            if (strcmp(&line[0], "#")==0 || line[0] == '\0'|| line[0] == '\n') {}
             else {
+		printf("%s", line);
                 char *temp;
                 temp = strtok(line, " ");
                 aimSwith = atoi(&temp[2]);
-                srcIP = atoi(strtok(NULL, " "));
-                dstIP = atoi(strtok(NULL, " "));
+                temp = strtok(NULL, " ");
+		srcIP = atoi(temp);
+                temp = strtok(NULL, " ");
+		dstIP = atoi(temp);
+		printf("%d %d %d, %s", aimSwith, srcIP, dstIP, line);
+		
             }
         }
 
@@ -557,13 +562,13 @@ int controller(int numSwitch) {
             read(STDIN_FILENO, userCmd, sizeof(userCmd));
             userCmd[5] = '\0';
 	        keyboard[0].revents = -1;
-            printf("%s\n", userCmd)
+            printf("%s\n", userCmd);
         }
 
         // run user cmd
-        if (strcmp(userCmd,"list")==0) {
+        if (strcmp(userCmd,"list\0")==0) {
             printController(switch_list, numSwitch, openCounter, queryCounter, ackCounter, addCounter);
-        } else if (strcmp(userCmd,"exit")==0) {
+        } else if (strcmp(userCmd,"exit\0")==0) {
             printController(switch_list, numSwitch, openCounter, queryCounter, ackCounter, addCounter);
             return 0;
         }
@@ -618,13 +623,15 @@ int controller(int numSwitch) {
 
 MSG controllerRule(MSG_QUERY query, SwitchInfo switch_list[], int numSwitch) {
     MSG msg;
+    int find=0;
     msg.mAdd.swID = query.swID;
     msg.mAdd.srcIP = query.srcIP;
     msg.mAdd.dstIP = query.dstIP;
     msg.mAdd.pri = 4;
     printf("\nTransmitted (src= cont, dest= sw%d) [ADD]:\n	 (srcIP= 0-1000, ", query.swID);
     for (int i=0; i<numSwitch; i++) {
-        if (switch_list[i].IPlo <= query.dstIP <= switch_list[i].Iphi) {
+        if (switch_list[i].IPlo <= query.dstIP && query.dstIP <= switch_list[i].Iphi) {
+	    find = 1;
             msg.mAdd.action = FORWARD;
             msg.mAdd.dstIPlo = switch_list[i].IPlo;
             msg.mAdd.dstIPhi = switch_list[i].Iphi;
@@ -634,10 +641,11 @@ MSG controllerRule(MSG_QUERY query, SwitchInfo switch_list[], int numSwitch) {
                 msg.mAdd.actionVal = 1;
             }
             printf("destIP= %d-%d, action= FORWARD:%d", msg.mAdd.dstIPlo, msg.mAdd.dstIPhi, msg.mAdd.actionVal);
-            break;
+            
+	    break;
         }
     }
-    if (msg.mAdd.action != FORWARD) {
+    if (find == 0) {
         msg.mAdd.action = DROP;
         msg.mAdd.dstIPlo = query.dstIP;
         msg.mAdd.dstIPhi = query.dstIP;
