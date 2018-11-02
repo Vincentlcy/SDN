@@ -775,7 +775,7 @@ int openFIFO(int sender, int reciver) {
     strcpy(fifoName, "fifo-x-y");
     fifoName[5] = sender + '0';
     fifoName[7] = reciver + '0';
-    print("%s\n", fifoName);
+    printf("%s\n", fifoName);
 
     return open(fifoName, O_RDWR);
 }
