@@ -309,7 +309,6 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 }
 
                 int n = switchAction(flows, frame.msg.mAdd.srcIP, frame.msg.mAdd.dstIP, numFlowTable);
-                admitCounter++;
                 if (n > 0) {
                     relayOutCounter++;
                     MSG msg;
@@ -451,7 +450,6 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 }
 
                 int n = switchAction(flows, frame.msg.mAdd.srcIP, frame.msg.mAdd.dstIP, numFlowTable);
-                admitCounter++;
                 if (n > 0) {
                     relayOutCounter++;
                     MSG msg;
