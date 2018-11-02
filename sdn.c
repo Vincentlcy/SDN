@@ -1,7 +1,7 @@
 
 # include <stdio.h>
 # include <stdlib.h>
-// # include <poll.h>
+# include <poll.h>
 # include <unistd.h>
 # include <stdarg.h>
 # include <assert.h>
@@ -90,7 +90,7 @@ typedef struct {
 } SwitchCounter;
 
 typedef struct {
-    struct SwitchInfo switch_list[7];
+    SwitchInfo switch_list[7];
     int numSwitch;
     int openCounter;
     int queryCounter;
@@ -99,7 +99,7 @@ typedef struct {
 } CON;
 
 typedef struct {
-    FlowTable *flows[];
+    FlowTable *flows;
     int numFlowTable;
     SwitchCounter swCounter;
 } SW;
@@ -140,7 +140,7 @@ int main(int argc, char* argv[]) {
         /* Bound singal USER1 with handler */
         signal(SIGUSR1, user1Controller);
         
-        controller((int)argv[2]);
+        controller(atoi(argv[2]));
 
     } else if (argc == 6 && strncmp(&name[0],"s",1)==0 && strncmp(&name[1],"w",1)==0) {
         /*switch mode*/
@@ -275,7 +275,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         swCounter.queryCounter = queryCounter;
 
         Sw.swCounter = swCounter;
-        Sw.flows = &flows;
+        Sw.flows = flows;
         Sw.numFlowTable = numFlowTable;
 
         // run user cmd
@@ -291,7 +291,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         // read from file
         char line[100];
         if (fgets(line, 100, filefp)!=NULL) {
-            if (strcmp(&line[0], "#")==0 || strcmp(&line[0], '\0') == 0) {}
+            if (strcmp(&line[0], "#")==0 || line[0] == '\0') {}
             else {
                 char *temp;
                 temp = strtok(line, " ");
@@ -502,7 +502,7 @@ int controller(int numSwitch) {
     while (1) {
 
         // update global variable
-        Con.switch_list = &switch_list;
+	memcpy(&Con.switch_list, &switch_list, sizeof(switch_list));
         Con.numSwitch = numSwitch;
         Con.openCounter = openCounter;
         Con.queryCounter = queryCounter;
@@ -540,7 +540,7 @@ int controller(int numSwitch) {
         poll(pollfifo, numSwitch, 0);
 
         for (int i=0;i<numSwitch;i++) {
-            if ((keyboard.revents & POLLIN)) {
+            if ((keyboard[0].revents & POLLIN)) {
                 FRAME frame;
                 frame = rcvFrame(pollfifo[i].fd);
 
@@ -601,7 +601,8 @@ int printController(SwitchInfo switch_list[],int numSwitch,int openCounter,int q
     printf("Switch information:\n");
     for (int i=0; i< numSwitch; i++) {
         if (switch_list[i].swID != 0) {
-            printf("[sw%d] port1= %d, port2= %d, port3= %d-$d", switch_list[i].swID, switch_list[i].port1, switch_list[i].port2, switch_list[i].IPlo, switch_list[i].Iphi);
+            printf("[sw%d] port1= %d, port2= %d, ", switch_list[i].swID, switch_list[i].port1, switch_list[i].port2);
+	    printf("port3=%d-%d\n", switch_list[i].IPlo, switch_list[i].Iphi);
         }
     }
     printf("Packet Stats:\n");
