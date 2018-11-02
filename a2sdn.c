@@ -19,6 +19,7 @@
 
 typedef enum {ACK, OPEN, QUERY, ADD, RELAY} KIND; // kind of message from lab
 
+// Messages structs
 typedef struct {
     int swID;
     int port1;
@@ -51,9 +52,11 @@ typedef struct{
     int dstIP;
 } MDG_RELAY;
 
+// FRAME struct for trans data
 typedef union { MSG_OPEN mOpen; MSG_QUERY mQuery; MSG_ADD mAdd; MDG_RELAY mRelay;} MSG;
 typedef struct { KIND kind; MSG msg; } FRAME;
 
+// Base switch infomation work as parameter in the code
 typedef struct {
     int swID;
     int port1;
@@ -68,6 +71,7 @@ typedef struct {
 //    short revents;    /* returned events */
 //}pollfd;
 
+// Base flowtable infomation for switch
 typedef struct {
     int srcIPlo;
     int srcIPhi;
@@ -79,6 +83,7 @@ typedef struct {
     int pktCount;
 } FlowTable;
 
+// Base counter infomation as parameter for switchPrint()
 typedef struct {
     int admitCounter;
     int ackCounter;
@@ -89,6 +94,7 @@ typedef struct {
     int queryCounter;
 } SwitchCounter;
 
+// base Controller information for USER1 signal handler
 typedef struct {
     SwitchInfo switch_list[7];
     int numSwitch;
@@ -98,6 +104,7 @@ typedef struct {
     int addCounter;
 } CON;
 
+// base Switch information for USER1 signal handler
 typedef struct {
     FlowTable *flows;
     int numFlowTable;
@@ -118,9 +125,10 @@ FRAME rcvFrame (int fd);
 void WARNING (const char *fmt, ... );
 void sendFrame (int fd, KIND kind, MSG *msg);
 
+// for USER1 handler
 CON Con;
 SW Sw;
-
+// since marco do not work well in C, insteadlly using global variable
 const int FORWARD = 1;
 const int DROP = 1;
 
@@ -151,6 +159,7 @@ int main(int argc, char* argv[]) {
         char filename[50];
         strcpy(filename, argv[2]);
 
+        // get the port of the switch
         if (strcmp(argv[3],"null")==0) {
             sw.port1 = -1;
         } else {
@@ -163,6 +172,7 @@ int main(int argc, char* argv[]) {
             sw.port2 = atoi(&argv[4][2]);
         }
 
+        // get the IP range
         char *temp;
         temp = strtok(argv[5], "-");
         sw.IPlo = atoi(temp);
@@ -190,6 +200,7 @@ void user1Controller(int signum) {
 }
 
 void user1Switch(int signum) {
+    // handle the user1 singals when in switch mode
     printf("\n");
     printf("\nUSER1 singal received \n");
     printSwitch(Sw.flows, Sw.numFlowTable, Sw.swCounter);
@@ -256,6 +267,76 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         int srcIP = 0;
         int dstIP = 0;
 
+        struct pollfd fifo[3];
+        fifo[0].fd = fdConRead;
+        fifo[0].events = POLLIN;
+        fifo[1].fd = fdPort1Read;
+        fifo[1].events = POLLIN;
+        fifo[2].fd = fdPort2Read;
+        fifo[2].events = POLLIN;
+        poll(fifo, 3, 0);
+
+        // read from controller
+        if (fifo[0].revents & POLLIN) {
+            FRAME frame;
+            frame = rcvFrame(fifo[0].fd);
+	        fifo[0].revents = -1;
+
+            if (frame.kind == ACK) {
+                ackCounter += 1;
+		        printf("\nReceived (src= cont, dest= sw%d) [ACK]\n", sw.swID);
+            }
+
+            if (frame.kind == ADD) {
+                numFlowTable++;
+                addRuleCounter++;
+
+                flows[numFlowTable-1].srcIPlo = 0;
+                flows[numFlowTable-1].srcIPhi = MAX_IP;
+                flows[numFlowTable-1].dstIPlo = frame.msg.mAdd.dstIPlo;
+                flows[numFlowTable-1].dstIPhi = frame.msg.mAdd.dstIPhi;
+                flows[numFlowTable-1].actionType = frame.msg.mAdd.action;
+                flows[numFlowTable-1].actionVal = frame.msg.mAdd.actionVal;
+                flows[numFlowTable-1].pri = frame.msg.mAdd.pri;
+                flows[numFlowTable-1].pktCount = 0;
+
+                printf("\nReceived (src= cont, dest= sw%d) [ADD]:\n", sw.swID);
+                printf("    (srcIP= 0-%d, destIP= %d-%d, ", flows[numFlowTable-1].srcIPhi, flows[numFlowTable-1].dstIPlo, flows[numFlowTable-1].dstIPhi);
+                if (flows[numFlowTable].actionType == FORWARD) {
+                    printf("action= FORWARD:%d, pri= %d, pktCount= %d\n", flows[numFlowTable-1].actionVal, flows[numFlowTable-1].pri, flows[numFlowTable-1].pktCount);
+                } else {
+                    printf("action= DROP:%d, pri= %d, pktCount= %d\n", flows[numFlowTable-1].actionVal, flows[numFlowTable-1].pri, flows[numFlowTable-1].pktCount);
+                }
+
+                int n = switchAction(flows, frame.msg.mAdd.srcIP, frame.msg.mAdd.dstIP, numFlowTable);
+                admitCounter++;
+                if (n > 0) {
+                    relayOutCounter++;
+                    MSG msg;
+                    msg.mRelay.srcIP = frame.msg.mAdd.srcIP;
+                    msg.mRelay.dstIP = frame.msg.mAdd.dstIP;
+                    if (n==1) {
+                        sendFrame(fdPort1Write, RELAY, &msg);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mQuery.srcIP, msg.mQuery.dstIP);
+                    } else if (n==2) {
+                        sendFrame(fdPort2Write, RELAY, &msg);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mQuery.srcIP, msg.mQuery.dstIP);
+                    }
+                } else if (n == -1) {
+                    // need to query
+                    queryCounter++;
+                    MSG msg;
+                    msg.mQuery.swID = sw.swID;
+                    msg.mQuery.dstIP = dstIP;
+                    msg.mQuery.srcIP = srcIP;
+                    msg.mQuery.port1 = sw.port1;
+                    msg.mQuery.port2 = sw.port2;
+                    sendFrame(fdConWrite, QUERY, &msg);
+                    printf("\nTransmitted (src= sw%d, dest= cont)[QUERY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, srcIP, dstIP);
+                } 
+            }
+        }
+
         // Poll from keyboard
         // http://blog.51cto.com/wait0804/1856818
         struct pollfd keyboard[1];
@@ -308,13 +389,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
             }
         }
 
-        struct pollfd fifo[3];
-        fifo[0].fd = fdConRead;
-        fifo[0].events = POLLIN;
-        fifo[1].fd = fdPort1Read;
-        fifo[1].events = POLLIN;
-        fifo[2].fd = fdPort2Read;
-        fifo[2].events = POLLIN;
+
 
         if (aimSwith == sw.swID) {
             int n = switchAction(flows, srcIP, dstIP, numFlowTable);
@@ -342,6 +417,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
             } 
         }
         aimSwith = 0; // reset 
+
 
         poll(fifo, 3, 0);
 
@@ -482,17 +558,21 @@ int executeswitch(SwitchInfo sw, char filename[]) {
 }
 
 int switchAction(FlowTable flows[],int srcIP,int dstIP,int numFlowTable) {
-    // return 0 for drop return 1 for reply return -1 for query
+    // return 0 for drop; return 1 for reply; return -1 for query;
     for (int i=0; i<numFlowTable; i++) {
         if (flows[i].dstIPlo<=dstIP && dstIP<=flows[i].dstIPhi) {
+            // destIP fit one flows IP range
+            // action if forward and val is 3
             if (flows[i].actionType == (FORWARD) && flows[i].actionVal == 3) {
                 flows[i].pktCount++;
                 return 0;
             }
+            // action if drop
             else if (flows[i].actionType == DROP) {
                 flows[i].pktCount++;
                 return 0;
             }
+            // action is reply
             else if (flows[i].actionType == FORWARD) {
                 flows[i].pktCount++;
                 return flows[i].actionVal;
@@ -503,21 +583,29 @@ int switchAction(FlowTable flows[],int srcIP,int dstIP,int numFlowTable) {
 }
 
 int printSwitch(FlowTable flows[],int numFlowTable, SwitchCounter swCounter) {
+    // function to show information 
+    // call by executeswitch when user input list or exit
+    // also could call be USER1 signal handler of switch
+
     printf("Flow table:\n");
     for (int i=0; i<numFlowTable; i++) {
         printf("sw[%d] (srcIP= %d-%d, destIP= %d-%d, )", i, flows[i].srcIPlo, flows[i].srcIPhi, flows[i].dstIPlo, flows[i].dstIPhi);
+
+        // display different info base on the action type
         if (flows[i].actionType == FORWARD) {
             printf("action= FORWARD:%d, pri= %d, pktCount= %d\n", flows[i].actionVal, flows[i].pri, flows[i].pktCount);
         } else {
             printf("action= DROP:%d, pri= %d, pktCount= %d\n", flows[i].actionVal, flows[i].pri, flows[i].pktCount);
         }
     }
+    // some times lines under shows very late and without change in when ssh to the lab machine
     printf("Packet Stats:\n    Received:    ADMIT:%d, ACK:%d, ADDRULE:%d, RELAYIN:%d\n", swCounter.admitCounter, swCounter.ackCounter, swCounter.addRuleCounter, swCounter.relayInCounter);
     printf("    Transmitted: OPEN:%d, QUERY:%d, RELAYOUT:%d\n", swCounter.openCounter, swCounter.queryCounter, swCounter.relayOutCounter);
     return 0;
 }
 
 int controller(int numSwitch) {
+    // set up the counters
     int openCounter = 0;
     int queryCounter = 0;
     int ackCounter = 0;
@@ -581,12 +669,14 @@ int controller(int numSwitch) {
         poll(pollfifo, numSwitch, 0);
 
         for (int i=0;i<numSwitch;i++) {
+            // check each FIFO with switch
             if ((pollfifo[i].revents & POLLIN)) {
                 FRAME frame;
 		        pollfifo[i].revents = -1;
                 frame = rcvFrame(pollfifo[i].fd);
 
                 if (frame.kind == OPEN) {
+                    // open msg
                     openCounter += 1;
 
                     switch_list[i].swID = frame.msg.mOpen.swID;
@@ -605,6 +695,7 @@ int controller(int numSwitch) {
                     printf("\nTransmitted (src= cont, dest= sw%d)[ACK]\n", i+1);
                 }
                 else if (frame.kind == QUERY) {
+                    // query msg
                     queryCounter += 1;
 
                     printf("\nReceived (src= sw%d, dest= cont) [QUERY]:  header= (srcIP= %d, destIP= %d)\n", i+1, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP);
@@ -619,8 +710,10 @@ int controller(int numSwitch) {
 }
 
 MSG controllerRule(MSG_QUERY query, SwitchInfo switch_list[], int numSwitch) {
+    // add msg creater, decide what action the switch will do
     MSG msg;
     int find=0;
+    // set up the same part of add msg
     msg.mAdd.swID = query.swID;
     msg.mAdd.srcIP = query.srcIP;
     msg.mAdd.dstIP = query.dstIP;
@@ -628,7 +721,8 @@ MSG controllerRule(MSG_QUERY query, SwitchInfo switch_list[], int numSwitch) {
     printf("\nTransmitted (src= cont, dest= sw%d) [ADD]:\n	 (srcIP= 0-1000, ", query.swID);
     for (int i=0; i<numSwitch; i++) {
         if (switch_list[i].IPlo <= query.dstIP && query.dstIP <= switch_list[i].Iphi) {
-	    find = 1;
+            // find a IP range that fit with the destIP
+	        find = 1;
             msg.mAdd.action = FORWARD;
             msg.mAdd.dstIPlo = switch_list[i].IPlo;
             msg.mAdd.dstIPhi = switch_list[i].Iphi;
@@ -643,6 +737,7 @@ MSG controllerRule(MSG_QUERY query, SwitchInfo switch_list[], int numSwitch) {
         }
     }
     if (find == 0) {
+        // not find good IP range create a new flow with action drop
         msg.mAdd.action = DROP;
         msg.mAdd.dstIPlo = query.dstIP;
         msg.mAdd.dstIPhi = query.dstIP;
@@ -655,7 +750,11 @@ MSG controllerRule(MSG_QUERY query, SwitchInfo switch_list[], int numSwitch) {
 }
 
 int printController(SwitchInfo switch_list[],int numSwitch,int openCounter,int queryCounter,int ackCounter,int addCounter) {
+    // function to show controller information 
+    // call by executeswitch when user input list or exit
+    // also could call be USER1 signal handler
     printf("Switch information:\n");
+    // show all switches' info by loop
     for (int i=0; i< numSwitch; i++) {
         if (switch_list[i].swID != 0) {
             printf("[sw%d] port1= %d, port2= %d, ", switch_list[i].swID, switch_list[i].port1, switch_list[i].port2);
@@ -663,13 +762,15 @@ int printController(SwitchInfo switch_list[],int numSwitch,int openCounter,int q
         }
     }
     printf("Packet Stats:\n");
-    printf("    Received:   OPEN: %d, QUERY: %d", openCounter, queryCounter);
-    printf("    Transmitted: ACK: %d, ADD: %d", ackCounter, addCounter);
+    printf("    Received:   OPEN: %d, QUERY: %d\n", openCounter, queryCounter);
+    printf("    Transmitted: ACK: %d, ADD: %d\n", ackCounter, addCounter);
 
     return 0;
 }
 
 int openFIFO(int sender, int reciver) {
+    // base function used in both controller and switch
+    // to open the FIFO
     char fifoName[10];
 
     strcpy(fifoName, "fifo-x-y");
@@ -678,6 +779,8 @@ int openFIFO(int sender, int reciver) {
 
     return open(fifoName, O_RDWR);
 }
+
+// The code under this comment is all from the lab and class
 
 FRAME rcvFrame (int fd)
 {
