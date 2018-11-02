@@ -387,10 +387,9 @@ int executeswitch(SwitchInfo sw, char filename[]) {
             }
         }
 
-        printf("%d %d %d\n", aimSwith, srcIP, dstIP);
+        printf("%d %d, %d %d\n", aimSwith sw.swID, srcIP, dstIP);
 
         if (aimSwith == sw.swID) {
-            printf("relay: %d", n);
             int n = switchAction(flows, srcIP, dstIP, numFlowTable);
             admitCounter++;
             if (n > 0) {
