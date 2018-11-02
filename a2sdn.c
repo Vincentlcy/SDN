@@ -481,7 +481,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
 int switchAction(FlowTable flows[],int srcIP,int dstIP,int numFlowTable) {
     // return 0 for drop return 1 for reply return -1 for query
     for (int i=0; i<numFlowTable; i++) {
-        if (flows[i].dstIPlo<=dstIP<=flows[i].dstIPhi) {
+        if (flows[i].dstIPlo<=dstIP && dstIP<=flows[i].dstIPhi) {
             if (flows[i].actionType == (FORWARD) && flows[i].actionVal == 3) {
                 flows[i].pktCount++;
                 return 0;
@@ -557,6 +557,7 @@ int controller(int numSwitch) {
             read(STDIN_FILENO, userCmd, sizeof(userCmd));
             userCmd[5] = '\0';
 	        keyboard[0].revents = -1;
+            printf("%s\n", userCmd)
         }
 
         // run user cmd
