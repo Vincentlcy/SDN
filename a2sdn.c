@@ -250,7 +250,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
     openCounter += 1;
     printf("\nTransmitted (src= sw%d, dest= cont) [OPEN]:\n", sw.swID);
     printf("    port0= cont, port1= %d, port2= %d, port3= %d-%d\n", sw.port1, sw.port2, sw.IPlo, sw.Iphi);
-
+    printf("D: %d", POLLIN);
 
     while (1) {
         int aimSwith = 0;
@@ -346,7 +346,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         if (fifo[0].revents & POLLIN) {
             FRAME frame;
             frame = rcvFrame(fifo[0].fd);
-	        fifo[0].revents = False;
+	        fifo[0].revents = -1;
 
             if (frame.kind == ACK) {
                 ackCounter += 1;
@@ -661,6 +661,8 @@ int openFIFO(int sender, int reciver) {
     strcpy(fifoName, "fifo-x-y");
     fifoName[5] = sender + '0';
     fifoName[7] = reciver + '0';
+
+    printf(fifoName);
 
     return open(fifoName, O_RDWR);
 }
