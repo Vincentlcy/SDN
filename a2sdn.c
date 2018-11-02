@@ -154,13 +154,13 @@ int main(int argc, char* argv[]) {
         if (strcmp(argv[3],"null")==0) {
             sw.port1 = -1;
         } else {
-            sw.port1 = atoi(&argv[3][3]);
+            sw.port1 = atoi(&argv[3][2]);
         }
 
         if (strcmp(argv[4],"null")==0) {
             sw.port2 = -1;
         } else {
-            sw.port2 = atoi(&argv[4][3]);
+            sw.port2 = atoi(&argv[4][2]);
         }
 
         char *temp;
@@ -267,7 +267,6 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         if ((keyboard[0].revents & POLLIN)) {
             read(STDIN_FILENO, userCmd, 4*sizeof(char));
 	        keyboard[0].revents = -1;
-            printf("%s\n", userCmd)
         }
 
         SwitchCounter swCounter;
@@ -305,7 +304,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 temp = strtok(NULL, " ");
                 dstIP = atoi(temp);
                 
-                printf("%d %d %d\n",n, srcIP, dstIP);
+                printf("%d %d %d\n", aimSwith, srcIP, dstIP);
             }
         }
 
@@ -561,7 +560,6 @@ int controller(int numSwitch) {
             read(STDIN_FILENO, userCmd, 4*sizeof(char));
             userCmd[4] = '\0';
 	        keyboard[0].revents = -1;
-            printf("%s\n", userCmd);
         }
 
         // run user cmd
