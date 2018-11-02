@@ -1,7 +1,7 @@
 
 # include <stdio.h>
 # include <stdlib.h>
-// # include <poll.h>
+# include <poll.h>
 # include <unistd.h>
 # include <stdarg.h>
 # include <assert.h>
@@ -12,10 +12,11 @@
 # include <string.h>
 # include <malloc.h>
 
-
+# define MAX_NSW 7;
 # define MAX_IP 1000;
 # define MIN_PRI 4;
-
+# define DROP 0;
+# define FORWARD 1; 
 
 typedef enum {ACK, OPEN, QUERY, ADD, RELAY} KIND; // kind of message from lab
 
@@ -90,7 +91,7 @@ typedef struct {
 } SwitchCounter;
 
 typedef struct {
-    struct SwitchInfo switch_list[7];
+    struct SwitchInfo *switch_list;
     int numSwitch;
     int openCounter;
     int queryCounter;
@@ -99,13 +100,13 @@ typedef struct {
 } CON;
 
 typedef struct {
-    FlowTable *flows[];
+    FlowTable *flows;
     int numFlowTable;
     SwitchCounter swCounter;
 } SW;
 
 void user1Controller(int signum);
-void user1Switch(int signum);
+void user1Controller(int signum);
 int executeswitch(SwitchInfo sw, char filename[]);
 int switchAction(FlowTable flows[],int srcIP,int dstIP,int numFlowTable);
 int printSwitch(FlowTable flows[],int numFlowTable,SwitchCounter swCounter);
@@ -121,9 +122,6 @@ void sendFrame (int fd, KIND kind, MSG *msg);
 CON Con;
 SW Sw;
 
-const int FORWARD = 1;
-const int DROP = 1;
-
 int main(int argc, char* argv[]) {
 
     char name[50];
@@ -132,20 +130,20 @@ int main(int argc, char* argv[]) {
     if (strcmp(argv[1], "cont") == 0 && argc == 3) {
         /*controler mode*/
 
-	if (atoi(argv[2]) > 7 ) {
+	if (atoi(argv[2]) > MAX_NSW) {
             printf("Too much Switchs"); // check number of switches
             return -2;
         }
 
         /* Bound singal USER1 with handler */
-        signal(SIGUSR1, user1Controller);
+        singal(SIGUSR1, user1Controller);
         
         controller((int)argv[2]);
 
-    } else if (argc == 6 && strncmp(&name[0],"s",1)==0 && strncmp(&name[1],"w",1)==0) {
+    } else if (argc == 6 && strcmp(name[0],"s")==0 && strcmp(name[1],"w")==0) {
         /*switch mode*/
         SwitchInfo sw;
-        sw.swID = atoi(&name[3]);
+        sw.swID = atoi(name[3]);
         
         char filename[50];
         strcpy(filename, argv[2]);
@@ -153,7 +151,7 @@ int main(int argc, char* argv[]) {
         if (strcmp(argv[3],"null")) {
             sw.port1 = -1;
         } else {
-            sw.port1 = atoi(&argv[3][3]);
+            sw.port1 = atoi(argv[3][3]);
         }
 
         if (strcmp(argv[4],"null")) {
@@ -162,14 +160,13 @@ int main(int argc, char* argv[]) {
             sw.port2 =  (int)argv[4][3];
         }
 
-        char *temp;
-        temp = strtok(argv[5], "-");
-        sw.IPlo = atoi(temp);
-        temp = strtok(NULL, "-");
-        sw.Iphi = atoi(temp);
+        char *s = "-";
+        char *sp = NULL;
+        sw.IPlo = (int)strtok_r(argv[5], s, &sp);
+        sw.Iphi = (int)strtok_r(NULL, s, &sp);
 
         /* Bound singal USER1 with handler */
-        signal(SIGUSR1, user1Switch);
+        singal(SIGUSR1, user1Switch);
 
         executeswitch(sw, filename);
 
@@ -207,8 +204,8 @@ int executeswitch(SwitchInfo sw, char filename[]) {
 
     flows[0].srcIPlo = 0;
     flows[0].srcIPhi = MAX_IP;
-    flows[0].dstIPhi = sw.Iphi;
-    flows[0].dstIPlo = sw.IPlo;
+    flows[0].dstIPhi = sw.IPhi;
+    flows[0].dstIPlo = sw.Iphi;
     flows[0].actionType = FORWARD;
     flows[0].actionVal = 3;
     flows[0].pri = 4;
@@ -259,7 +256,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         keyboard[0].fd = STDIN_FILENO;
         keyboard[0].events = POLLIN;
 
-        poll(keyboard, 1, 0);
+        poll(keyboard[0], 1, 0);
         char userCmd[50];
         if ((keyboard[0].revents & POLLIN)) {
             scanf("%s", userCmd);
@@ -275,7 +272,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         swCounter.queryCounter = queryCounter;
 
         Sw.swCounter = swCounter;
-        Sw.flows = &flows;
+        Sw.flows = flows;
         Sw.numFlowTable = numFlowTable;
 
         // run user cmd
@@ -291,13 +288,15 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         // read from file
         char line[100];
         if (fgets(line, 100, filefp)!=NULL) {
-            if (strcmp(&line[0], "#")==0 || strcmp(&line[0], '\0') == 0) {}
+            if (strcmp(line[0], "#")==0 || strcmp(line[0], '\0') == 0) {}
             else {
-                char *temp;
-                temp = strtok(line, " ");
-                aimSwith = atoi(&temp[2]);
-                srcIP = atoi(strtok(NULL, " "));
-                dstIP = atoi(strtok(NULL, " "));
+                char *s = " ";
+	            char *sp = NULL;
+                char temp[10];
+                strcpy(temp,strtok_r(line, s, &sp));
+                aimSwith = atoi(temp[2]);
+                srcIP = atoi(strtok_r(NULL, s, &sp));
+                dstIP = atoi(strtok_r(NULL, s, &sp));
             }
         }
 
@@ -325,7 +324,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
             } else if (n == -1) {
                 // need to query
                 queryCounter++;
-                MSG msg;
+                struct MSG msg;
                 msg.mQuery.swID = sw.swID;
                 msg.mQuery.dstIP = dstIP;
                 msg.mQuery.srcIP = srcIP;
@@ -398,7 +397,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                     msg.mRelay.dstIP = frame.msg.mQuery.dstIP;
                     if (n==1) {
                         sendFrame(fdPort1Write, RELAY, &msg);
-                    } else if (n==2) {
+                    } else if (i==2) {
                         sendFrame(fdPort2Write, RELAY, &msg);
                     }
                 } else if (n == -1) {
@@ -426,7 +425,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                     msg.mRelay.dstIP = frame.msg.mQuery.dstIP;
                     if (n==1) {
                         sendFrame(fdPort1Write, RELAY, &msg);
-                    } else if (n==2) {
+                    } else if (i==2) {
                         sendFrame(fdPort2Write, RELAY, &msg);
                     }
                 } else if (n == -1) {
@@ -448,7 +447,7 @@ int switchAction(FlowTable flows[],int srcIP,int dstIP,int numFlowTable) {
     // return 0 for drop return 1 for reply return -1 for query
     for (int i=0; i<numFlowTable; i++) {
         if (flows[i].dstIPlo<=dstIP<=flows[i].dstIPhi) {
-            if (flows[i].actionType == (FORWARD) && flows[i].actionVal == 3) {
+            if (flows[i].actionType == FORWARD && flows[i].actionVal == 3) {
                 flows[i].pktCount++;
                 return 0;
             }
@@ -465,7 +464,7 @@ int switchAction(FlowTable flows[],int srcIP,int dstIP,int numFlowTable) {
     return -1;
 }
 
-int printSwitch(FlowTable flows[],int numFlowTable, SwitchCounter swCounter) {
+int printSwitch(struct FlowTable flows[],int numFlowTable, SwitchCounter swCounter) {
     printf("Flow table:");
     for (int i=0; i<numFlowTable; i++) {
         printf("[%d] (srcIP= %d-%d, destIP= %d-%d, )", i, flows[i].srcIPlo, flows[i].srcIPhi, flows[i].dstIPlo, flows[i].dstIPhi);
@@ -475,7 +474,7 @@ int printSwitch(FlowTable flows[],int numFlowTable, SwitchCounter swCounter) {
             printf("action= DROP:%d, pri= %d, pktCount= %d\n", flows[i].actionVal, flows[i].pri, flows[i].pktCount);
         }
     }
-    printf("Packet Stats:\n    Received:    ADMIT:%d, ACK:%d, ADDRULE:%d, RELAYIN:%d\n", swCounter.admitCounter, swCounter.ackCounter, swCounter.addRuleCounter, swCounter.relayInCounter);
+    printf("Packet Stats:\n    Received:    ADMIT:%d, ACK:%d, ADDRULE:%d, RELAYIN:%d\n", swCounter.admitCounter, swCounter.ackCounter, swCounter.addRuleCounter, SwitchCounter.relayInCounter);
     printf("    Transmitted: OPEN:%d, QUERY:%d, RELAYOUT:%d", swCounter.openCounter, swCounter.queryCounter, swCounter.relayOutCounter);
     return 0;
 }
@@ -515,7 +514,7 @@ int controller(int numSwitch) {
         keyboard[0].fd = STDIN_FILENO;
         keyboard[0].events = POLLIN;
 
-        poll(keyboard, 1, 0);
+        poll(keyboard[0], 1, 0);
         char userCmd[50];
         if ((keyboard[0].revents & POLLIN)) {
             scanf("%s", userCmd);
