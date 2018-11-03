@@ -208,6 +208,7 @@ void user1Switch(int signum) {
 }
 
 int executeswitch(SwitchInfo sw, char filename[]) {
+    // Open the file
     FILE *filefp;
     filefp = fopen(filename, "r");
     if (filefp == NULL) {
@@ -215,6 +216,8 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         return -1;
     }
 
+
+    // set up flows by struct FlowTable
     FlowTable flows[50];
 
     flows[0].srcIPlo = 0;
@@ -226,6 +229,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
     flows[0].pri = 4;
     flows[0].pktCount = 0;
 
+    // set up counters
     int admitCounter = 0;
     int ackCounter = 0;
     int addRuleCounter = 0;
@@ -234,7 +238,9 @@ int executeswitch(SwitchInfo sw, char filename[]) {
     int queryCounter = 0;
     int relayOutCounter = 0;
     int numFlowTable = 1;
+    int queryLocker = 0;
 
+    // open the FIFO for read and write
     int fdConRead = openFIFO(0, sw.swID);
     int fdConWrite = openFIFO(sw.swID, 0);
     int fdPort1Read;
@@ -244,7 +250,8 @@ int executeswitch(SwitchInfo sw, char filename[]) {
     if (sw.port1 != -1) {
         fdPort1Read = openFIFO(sw.port1, sw.swID);
         fdPort1Write = openFIFO(sw.swID, sw.port1);
-    } else if (sw.port2 != -1) {
+    }
+    if (sw.port2 != -1) {
         fdPort2Read = openFIFO(sw.port2, sw.swID);
         fdPort2Write = openFIFO(sw.swID, sw.port2);
     }
@@ -257,6 +264,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
     msg.mOpen.IPlo = sw.IPlo;
     msg.mOpen.Iphi = sw.Iphi;
 
+    // send open message to controller
     sendFrame(fdConWrite, OPEN, &msg);
     openCounter += 1;
     printf("\nTransmitted (src= sw%d, dest= cont) [OPEN]:\n", sw.swID);
@@ -267,6 +275,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         int srcIP = 0;
         int dstIP = 0;
 
+        // set up contorller and 2 ports then set poll
         struct pollfd fifo[3];
         fifo[0].fd = fdConRead;
         fifo[0].events = POLLIN;
@@ -276,21 +285,26 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         fifo[2].events = POLLIN;
         poll(fifo, 3, 0);
 
-        // read from controller
+        // read from controller 
+        // for update flows
         if (fifo[0].revents & POLLIN) {
             FRAME frame;
             frame = rcvFrame(fifo[0].fd);
 	        fifo[0].revents = -1;
 
             if (frame.kind == ACK) {
+                // ACK message
                 ackCounter += 1;
 		        printf("\nReceived (src= cont, dest= sw%d) [ACK]\n", sw.swID);
             }
 
             if (frame.kind == ADD) {
+                // add new flow as respones of query so unlock query
+                queryLocker = 0;
                 numFlowTable++;
                 addRuleCounter++;
 
+                // set up new flow
                 flows[numFlowTable-1].srcIPlo = 0;
                 flows[numFlowTable-1].srcIPhi = MAX_IP;
                 flows[numFlowTable-1].dstIPlo = frame.msg.mAdd.dstIPlo;
@@ -300,6 +314,7 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 flows[numFlowTable-1].pri = frame.msg.mAdd.pri;
                 flows[numFlowTable-1].pktCount = 0;
 
+                // print flows messages
                 printf("\nReceived (src= cont, dest= sw%d) [ADD]:\n", sw.swID);
                 printf("    (srcIP= 0-%d, destIP= %d-%d, ", flows[numFlowTable-1].srcIPhi, flows[numFlowTable-1].dstIPlo, flows[numFlowTable-1].dstIPhi);
                 if (flows[numFlowTable].actionType == FORWARD) {
@@ -308,26 +323,30 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                     printf("action= DROP:%d, pri= %d, pktCount= %d\n", flows[numFlowTable-1].actionVal, flows[numFlowTable-1].pri, flows[numFlowTable-1].pktCount);
                 }
 
+                // recheck the message caused query and due with it
                 int n = switchAction(flows, frame.msg.mAdd.srcIP, frame.msg.mAdd.dstIP, numFlowTable);
                 if (n > 0) {
+                    // n > 0: need to relay and n is the port
                     relayOutCounter++;
                     MSG msg;
                     msg.mRelay.srcIP = frame.msg.mAdd.srcIP;
                     msg.mRelay.dstIP = frame.msg.mAdd.dstIP;
+
+                    // send messages
                     if (n==1) {
                         sendFrame(fdPort1Write, RELAY, &msg);
-                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mQuery.srcIP, msg.mQuery.dstIP);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mRelay.srcIP, msg.mRelay.dstIP);
                     } else if (n==2) {
                         sendFrame(fdPort2Write, RELAY, &msg);
-                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mQuery.srcIP, msg.mQuery.dstIP);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mRelay.srcIP, msg.mRelay.dstIP );
                     }
                 } else if (n == -1) {
-                    // need to query
+                    // need to query not possible here
                     queryCounter++;
                     MSG msg;
                     msg.mQuery.swID = sw.swID;
-                    msg.mQuery.dstIP = dstIP;
-                    msg.mQuery.srcIP = srcIP;
+                    msg.mQuery.dstIP = msg.mRelay.dstIP;
+                    msg.mQuery.srcIP = msg.mRelay.srcIP;
                     msg.mQuery.port1 = sw.port1;
                     msg.mQuery.port2 = sw.port2;
                     sendFrame(fdConWrite, QUERY, &msg);
@@ -336,19 +355,13 @@ int executeswitch(SwitchInfo sw, char filename[]) {
             }
         }
 
-        // Poll from keyboard
-        // http://blog.51cto.com/wait0804/1856818
-        struct pollfd keyboard[1];
-        keyboard[0].fd = STDIN_FILENO;
-        keyboard[0].events = POLLIN;
-
-        poll(keyboard, 1, 0);
-        char userCmd[50];
-        if ((keyboard[0].revents & POLLIN)) {
-            read(STDIN_FILENO, userCmd, 4*sizeof(char));
-	        keyboard[0].revents = -1;
+        // Loop the check controlle when did not get the responed of query
+        // This is avoid send mult query that will make same result
+        if (queryLocker ==  1) {
+            continue;
         }
-
+        
+        // update global variable
         SwitchCounter swCounter;
         swCounter.admitCounter = admitCounter;
         swCounter.ackCounter = ackCounter;
@@ -362,23 +375,53 @@ int executeswitch(SwitchInfo sw, char filename[]) {
         Sw.flows = flows;
         Sw.numFlowTable = numFlowTable;
 
-        // run user cmd
-        if (strcmp(userCmd,"list")==0) {
-            printSwitch(flows, numFlowTable, swCounter);
+        // Poll from keyboard
+        // http://blog.51cto.com/wait0804/1856818
+        struct pollfd keyboard[1];
+        keyboard[0].fd = STDIN_FILENO;
+        keyboard[0].events = POLLIN;
 
-        } else if (strcmp(userCmd,"exit")==0) {
+        // read the input
+        poll(keyboard, 1, 0);
+        char userCmd[5];
+        char userTemp[100];
+        if ((keyboard[0].revents & POLLIN)) {
+            read(STDIN_FILENO, userCmd, 4);
+	        keyboard[0].revents = -1;
+            userCmd[4] = '\0';
+            if (poll(keyboard, 1, 0)) {
+                read(STDIN_FILENO, userTemp, 100);
+                keyboard[0].revents = -1;
+            }
+        }
+
+        // run user cmd - base on input to make output
+        // list for list info
+        // exit for list and exit
+        if (strcmp(userCmd,"list\0")==0) {
+            strcpy(userCmd, "ad");
+            printSwitch(flows, numFlowTable, swCounter);
+        } else if (strcmp(userCmd,"exit\0")==0) {
             printSwitch(flows, numFlowTable, swCounter);
             return 0;
         }
 
         // read from file
+        
         char line[100];
-        if (fgets(line, 100, filefp)!=NULL) {
-            if (strcmp(&line[0], "#")==0 || line[0] == '\0'|| line[0] == '\n') {}
-            else {
+        if (fgets(line, 2, filefp)!=NULL) {
+            // fgets get the 2ed arg-1 elements
+            if (strcmp(&line[0], "#")==0 || line[0] == '\0'||line[0] == '\r') {
+                fgets(line, 100, filefp);
+            } else if ( line[0] == '\n') {
+                
+            }
+            else{
+                fgets(line, 100, filefp);
+                // divide the spilter
                 char *temp;
                 temp = strtok(line, " ");
-                aimSwith = atoi(&temp[2]);
+                aimSwith = atoi(&temp[1]);
                 temp = strtok(NULL, " ");
                 srcIP = atoi(temp);
                 temp = strtok(NULL, " ");
@@ -386,18 +429,23 @@ int executeswitch(SwitchInfo sw, char filename[]) {
             }
         }
 
+        // if the swithc name is this switch
+        // the text part
         if (aimSwith == sw.swID) {
             int n = switchAction(flows, srcIP, dstIP, numFlowTable);
-            admitCounter++;
+            admitCounter+=1;
             if (n > 0) {
+                // n > 0 send to other port
                 relayOutCounter++;
                 MSG msg;
                 msg.mRelay.srcIP = srcIP;
                 msg.mRelay.dstIP = dstIP;
                 if (n==1) {
                     sendFrame(fdPort1Write, RELAY, &msg);
+                    printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mRelay.srcIP, msg.mRelay.dstIP );
                 } else if (n==2) {
                     sendFrame(fdPort2Write, RELAY, &msg);
+                    printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mRelay.srcIP, msg.mRelay.dstIP );
                 }
             } else if (n == -1) {
                 // need to query
@@ -409,7 +457,11 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 msg.mQuery.port1 = sw.port1;
                 msg.mQuery.port2 = sw.port2;
                 sendFrame(fdConWrite, QUERY, &msg);
+                // print message and lock on to wait the add
                 printf("\nTransmitted (src= sw%d, dest= cont)[QUERY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, srcIP, dstIP);
+                queryLocker = 1;
+                 
+                continue;
             } 
         }
         aimSwith = 0; // reset 
@@ -424,14 +476,18 @@ int executeswitch(SwitchInfo sw, char filename[]) {
 	        fifo[0].revents = -1;
 
             if (frame.kind == ACK) {
+                // no happened here
                 ackCounter += 1;
 		        printf("\nReceived (src= cont, dest= sw%d) [ACK]\n", sw.swID);
             }
 
             if (frame.kind == ADD) {
+                // reserive add  reset querylocker
+                queryLocker = 0;
                 numFlowTable++;
                 addRuleCounter++;
 
+                // set up new flow
                 flows[numFlowTable-1].srcIPlo = 0;
                 flows[numFlowTable-1].srcIPhi = MAX_IP;
                 flows[numFlowTable-1].dstIPlo = frame.msg.mAdd.dstIPlo;
@@ -441,38 +497,48 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 flows[numFlowTable-1].pri = frame.msg.mAdd.pri;
                 flows[numFlowTable-1].pktCount = 0;
 
+                // print message
                 printf("\nReceived (src= cont, dest= sw%d) [ADD]:\n", sw.swID);
                 printf("    (srcIP= 0-%d, destIP= %d-%d, ", flows[numFlowTable-1].srcIPhi, flows[numFlowTable-1].dstIPlo, flows[numFlowTable-1].dstIPhi);
-                if (flows[numFlowTable].actionType == FORWARD) {
+                if (flows[numFlowTable-1].actionType == FORWARD) {
                     printf("action= FORWARD:%d, pri= %d, pktCount= %d\n", flows[numFlowTable-1].actionVal, flows[numFlowTable-1].pri, flows[numFlowTable-1].pktCount);
                 } else {
                     printf("action= DROP:%d, pri= %d, pktCount= %d\n", flows[numFlowTable-1].actionVal, flows[numFlowTable-1].pri, flows[numFlowTable-1].pktCount);
                 }
+                 
 
+                // resend the message
                 int n = switchAction(flows, frame.msg.mAdd.srcIP, frame.msg.mAdd.dstIP, numFlowTable);
                 if (n > 0) {
+                    // relay message
                     relayOutCounter++;
                     MSG msg;
                     msg.mRelay.srcIP = frame.msg.mAdd.srcIP;
                     msg.mRelay.dstIP = frame.msg.mAdd.dstIP;
+                    // print the information
                     if (n==1) {
                         sendFrame(fdPort1Write, RELAY, &msg);
-                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mQuery.srcIP, msg.mQuery.dstIP);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mRelay.srcIP, msg.mRelay.dstIP );
                     } else if (n==2) {
                         sendFrame(fdPort2Write, RELAY, &msg);
-                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mQuery.srcIP, msg.mQuery.dstIP);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mRelay.srcIP, msg.mRelay.dstIP );
                     }
+                     
                 } else if (n == -1) {
                     // need to query
                     queryCounter++;
                     MSG msg;
                     msg.mQuery.swID = sw.swID;
-                    msg.mQuery.dstIP = dstIP;
-                    msg.mQuery.srcIP = srcIP;
+                    msg.mQuery.dstIP = frame.msg.mAdd.dstIP;
+                    msg.mQuery.srcIP = frame.msg.mAdd.srcIP;
                     msg.mQuery.port1 = sw.port1;
                     msg.mQuery.port2 = sw.port2;
                     sendFrame(fdConWrite, QUERY, &msg);
+                    // print info and lock for wait
                     printf("\nTransmitted (src= sw%d, dest= cont)[QUERY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, srcIP, dstIP);
+                    queryLocker = 1;
+                     
+                    continue;
                 } 
             }
         }
@@ -484,32 +550,35 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 frame = rcvFrame(fifo[1].fd);
                 relayInCounter++;
 
-                printf("\nReceived (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.port1, sw.swID, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP);
-
-                int n = switchAction(flows, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP, numFlowTable);
+                printf("\nReceived (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.port1, sw.swID, frame.msg.mRelay.srcIP, frame.msg.mRelay.dstIP);
+                 
+                int n = switchAction(flows, frame.msg.mRelay.srcIP, frame.msg.mRelay.dstIP, numFlowTable);
                 if (n > 0) {
+                    // resend to other port
                     relayOutCounter++;
-                    MSG msg;
-                    msg.mRelay.srcIP = frame.msg.mQuery.srcIP;
-                    msg.mRelay.dstIP = frame.msg.mQuery.dstIP;
                     if (n==1) {
                         sendFrame(fdPort1Write, RELAY, &msg);
-                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mQuery.srcIP, msg.mQuery.dstIP);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, frame.msg.mRelay.srcIP, frame.msg.mRelay.dstIP);
+                         
                     } else if (n==2) {
                         sendFrame(fdPort2Write, RELAY, &msg);
-                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mQuery.srcIP, msg.mQuery.dstIP);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, frame.msg.mRelay.srcIP, frame.msg.mRelay.dstIP);
+                         
                     }
                 } else if (n == -1) {
                     // need to query
                     queryCounter++;
                     MSG msg;
                     msg.mQuery.swID = sw.swID;
-                    msg.mQuery.dstIP = dstIP;
-                    msg.mQuery.srcIP = srcIP;
+                    msg.mQuery.dstIP = frame.msg.mRelay.dstIP;
+                    msg.mQuery.srcIP = frame.msg.mRelay.srcIP;
                     msg.mQuery.port1 = sw.port1;
                     msg.mQuery.port2 = sw.port2;
                     sendFrame(fdConWrite, QUERY, &msg);
+                    // query sended wait for add
                     printf("\nTransmitted (src= sw%d, dest= cont)[QUERY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, srcIP, dstIP);
+                    queryLocker = 1;
+                    continue;
                 } 
             }
         }
@@ -520,35 +589,42 @@ int executeswitch(SwitchInfo sw, char filename[]) {
                 frame = rcvFrame(fifo[2].fd);
                 relayInCounter++;
 
-                printf("\nReceived (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.port2, sw.swID, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP);
+                printf("\nReceived (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.port2, sw.swID, frame.msg.mRelay.srcIP, frame.msg.mRelay.dstIP );
+                 
 
-                int n = switchAction(flows, frame.msg.mQuery.srcIP, frame.msg.mQuery.dstIP, numFlowTable);
+                int n = switchAction(flows, frame.msg.mRelay.srcIP, frame.msg.mRelay.dstIP , numFlowTable);
                 if (n > 0) {
                     relayOutCounter++;
                     MSG msg;
-                    msg.mRelay.srcIP = frame.msg.mQuery.srcIP;
-                    msg.mRelay.dstIP = frame.msg.mQuery.dstIP;
+                    msg.mRelay.srcIP = frame.msg.mRelay.srcIP;
+                    msg.mRelay.dstIP = frame.msg.mRelay.dstIP;
                     if (n==1) {
                         sendFrame(fdPort1Write, RELAY, &msg);
-                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mQuery.srcIP, msg.mQuery.dstIP);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port1, msg.mRelay.srcIP, msg.mRelay.dstIP);
+                         
                     } else if (n==2) {
                         sendFrame(fdPort2Write, RELAY, &msg);
-                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mQuery.srcIP, msg.mQuery.dstIP);
+                        printf("\nTransmitted (src= sw%d, dest= sw%d) [RELAY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, sw.port2, msg.mRelay.srcIP, msg.mRelay.dstIP);
+                         
                     }
                 } else if (n == -1) {
                     // need to query
                     queryCounter++;
                     MSG msg;
                     msg.mQuery.swID = sw.swID;
-                    msg.mQuery.dstIP = dstIP;
-                    msg.mQuery.srcIP = srcIP;
+                    msg.mQuery.dstIP = frame.msg.mRelay.srcIP;
+                    msg.mQuery.srcIP = frame.msg.mRelay.dstIP;
                     msg.mQuery.port1 = sw.port1;
                     msg.mQuery.port2 = sw.port2;
                     sendFrame(fdConWrite, QUERY, &msg);
                     printf("\nTransmitted (src= sw%d, dest= cont)[QUERY]:  header= (srcIP= %d, destIP= %d)\n", sw.swID, srcIP, dstIP);
+                     
+                    queryLocker = 1;
+                    continue;
                 } 
             }
         }
+        fflush(stdout);
     }
 }
 
@@ -636,17 +712,25 @@ int controller(int numSwitch) {
         keyboard[0].fd = STDIN_FILENO;
         keyboard[0].events = POLLIN;
 
+        // read the input
         poll(keyboard, 1, 0);
         char userCmd[5];
+        char userTemp[100];
         if ((keyboard[0].revents & POLLIN)) {
-            // scanf("%s", userCmd);
-            read(STDIN_FILENO, userCmd, 4*sizeof(char));
-            userCmd[4] = '\0';
+            read(STDIN_FILENO, userCmd, 4);
 	        keyboard[0].revents = -1;
+            userCmd[4] = '\0';
+            if (poll(keyboard, 1, 0)) {
+                read(STDIN_FILENO, userTemp, 100);
+                keyboard[0].revents = -1;
+            }
         }
 
-        // run user cmd
+        // run user cmd - base on input to make output
+        // list for list info
+        // exit for list and exit
         if (strcmp(userCmd,"list\0")==0) {
+            strcpy(userCmd, "ad");
             printController(switch_list, numSwitch, openCounter, queryCounter, ackCounter, addCounter);
         } else if (strcmp(userCmd,"exit\0")==0) {
             printController(switch_list, numSwitch, openCounter, queryCounter, ackCounter, addCounter);
@@ -701,6 +785,7 @@ int controller(int numSwitch) {
                 }
             }
         }
+        fflush(stdout);
     }
 }
 
@@ -712,6 +797,7 @@ MSG controllerRule(MSG_QUERY query, SwitchInfo switch_list[], int numSwitch) {
     msg.mAdd.swID = query.swID;
     msg.mAdd.srcIP = query.srcIP;
     msg.mAdd.dstIP = query.dstIP;
+    printf("here is conRule %d %d\n", msg.mAdd.srcIP, msg.mAdd.dstIP);
     msg.mAdd.pri = 4;
     printf("\nTransmitted (src= cont, dest= sw%d) [ADD]:\n	 (srcIP= 0-1000, ", query.swID);
     for (int i=0; i<numSwitch; i++) {
@@ -740,7 +826,7 @@ MSG controllerRule(MSG_QUERY query, SwitchInfo switch_list[], int numSwitch) {
         printf("destIP= %d-%d, action= DROP:%d",msg.mAdd.dstIPlo, msg.mAdd.dstIPhi, msg.mAdd.actionVal);
     }
 
-    printf(", pri= %d, pktCount= 0)", msg.mAdd.pri);
+    printf(", pri= %d, pktCount= 0)\n", msg.mAdd.pri);
     return msg;
 }
 
